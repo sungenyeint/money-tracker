@@ -82,8 +82,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onClose, se
 
     // Update category validation when type changes
     useEffect(() => {
-        setValue('category', '');
-    }, [type, setValue]);
+        if (!selectedTransaction) {
+            setValue('category', '', { shouldValidate: true });
+        }
+    }, [type, setValue, selectedTransaction]);
 
     const onFormSubmit = (data: FormValues) => {
         onSubmit({

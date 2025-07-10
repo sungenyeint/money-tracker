@@ -42,8 +42,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
             await signInWithPopup(auth, provider);
         } catch (error: unknown) {
-            console.error(error);
-            throw error;
+            if (error instanceof Error) {
+                throw error;
+            }
+            if (
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error &&
+                (error.code === 'auth/invalid-credential' ||
+                    error.code === 'auth/wrong-password')
+            ) {
+                throw new Error('Invalid email or password.');
+            }
+            if (
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error &&
+                error.code === 'auth/user-not-found'
+            ) {
+                throw new Error('No user found with this email.');
+            }
         }
     };
 
@@ -55,9 +73,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
             await createUserWithEmailAndPassword(auth, email, password);
         } catch (error: unknown) {
-            // Handle or log error as needed
-            console.error(error);
-            throw error;
+            if (error instanceof Error) {
+                throw error;
+            }
+            if (
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error &&
+                (error.code === 'auth/invalid-credential' ||
+                    error.code === 'auth/wrong-password')
+            ) {
+                throw new Error('Invalid email or password.');
+            }
+            if (
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error &&
+                error.code === 'auth/user-not-found'
+            ) {
+                throw new Error('No user found with this email.');
+            }
         }
     };
 
@@ -65,9 +100,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
             await signInWithEmailAndPassword(auth, email, password);
         } catch (error: unknown) {
-            // Handle or log error as needed
-            console.error(error);
-            throw error;
+            if (error instanceof Error) {
+                throw error;
+            }
+            if (error instanceof Error) {
+                throw error;
+            }
+            if (
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error &&
+                (error.code === 'auth/invalid-credential' ||
+                    error.code === 'auth/wrong-password')
+            ) {
+                throw new Error('Invalid email or password.');
+            }
+            if (
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error &&
+                error.code === 'auth/user-not-found'
+            ) {
+                throw new Error('No user found with this email.');
+            }
         }
     };
 
