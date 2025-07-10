@@ -1,17 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Transaction, EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../types/transaction';
 
 interface TransactionFormProps {
     onSubmit: (transaction: Omit<Transaction, 'id'>) => void;
     onClose: () => void;
+    selectedTransaction?: Transaction;
 }
 
-const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onClose }) => {
+const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onClose, selectedTransaction }) => {
     const [type, setType] = useState<'income' | 'expense'>('expense');
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
     const [category, setCategory] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+    useEffect(() => {
+        if (selectedTransaction) {
+            setType(selectedTransaction.type);
+            setAmount(selectedTransaction.amount.toString());
+            setDescription(selectedTransaction.description);
+            setCategory(selectedTransaction.category);
+            setDate(selectedTransaction.date);
+        }
+    }, [selectedTransaction]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();

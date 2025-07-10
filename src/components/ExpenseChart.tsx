@@ -74,6 +74,7 @@ export default function ExpenseChart({ transactions, detailed = false }: Expense
                                 cy="50%"
                                 labelLine={false}
                                 label={({ name, percentage }) => `${name}: ${percentage}%`}
+                                innerRadius={40}
                                 outerRadius={80}
                                 fill="#8884d8"
                                 dataKey="value"
@@ -112,9 +113,8 @@ export default function ExpenseChart({ transactions, detailed = false }: Expense
                     data={pieData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={40}
-                    outerRadius={80}
-                    paddingAngle={5}
+                    label={({ name, percentage }) => `${name}: ${percentage}%`}
+                    outerRadius={100}
                     dataKey="value"
                 >
                     {pieData.map((entry, index) => (

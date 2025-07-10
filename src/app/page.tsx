@@ -1,51 +1,185 @@
 "use client";
 
-import { useState } from "react";
-import SummaryCard from "./components/SummaryCard";
-import TransactionForm from "./components/TransactionForm";
-import { Transaction } from "./types/transaction";
-import TransactionHistory from "./components/TransactionHistory";
-import ExpenseChart from "./components/ExpenseChart";
+import { useState, useEffect } from "react";
+import SummaryCard from "../components/SummaryCard";
+import TransactionForm from "../components/TransactionForm";
+import { Transaction } from "../types/transaction";
+import TransactionHistory from "../components/TransactionHistory";
+import ExpenseChart from "../components/ExpenseChart";
+import AuthForm from "../components/AuthForm";
+import { useAuth } from "../contexts/AuthContext";
+import {
+    getTransactions,
+    insertTransaction,
+    destroyTransaction,
+    updateTransaction,
+} from "./../lib/apiTransactions";
 
-export default function HomePage() {
+export default function Home() {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "analytics">("overview");
+    const [activeTab, setActiveTab] = useState<
+        "overview" | "transactions" | "analytics"
+    >("overview");
+    const { user, loading, logout } = useAuth();
+    const [selectedTransaction, setSelectedTransaction] = useState<
+        Transaction | undefined
+    >(undefined);
+    const [submitLoading, setSubmitLoading] = useState(false);
 
-    const addTransaction = (transaction: Omit<Transaction, 'id'>) => {
-        const newTransaction: Transaction = {
-            ...transaction,
-            id: Date.now().toString(),
+    useEffect(() => {
+        const fetchTransactions = async () => {
+            // Only fetch if loading is false and we have a user
+            if (!loading && user) {
+                try {
+                    const data = await getTransactions();
+                    setTransactions(data);
+                } catch (error) {
+                    console.error("Failed to fetch transactions:", error);
+                }
+            } else if (!loading && !user) {
+                // If not loading and no user, clear transactions
+                setTransactions([]);
+            }
         };
-        setTransactions(prev => [newTransaction, ...prev]);
+        fetchTransactions();
+    }, [user, loading]); // Add loading to the dependency array
+
+    const handleTransactionSubmit = async (
+        transaction: Omit<Transaction, "id">
+    ) => {
         setIsFormOpen(false);
+        setSubmitLoading(true);
+        try {
+            if (selectedTransaction) {
+                // Call the API to update the transaction in the database
+                await updateTransaction(selectedTransaction.id, transaction);
+
+                // Correctly update the local state by merging the new transaction data
+                setTransactions((prev) =>
+                    prev.map((t) =>
+                        t.id === selectedTransaction.id ? { ...t, ...transaction } : t
+                    )
+                );
+            } else {
+                // Call the API to insert the new transaction
+                const newTransaction = await insertTransaction(transaction);
+
+                // Add the new transaction (returned from the API) to the local state
+                setTransactions((prev) => [...prev, newTransaction]);
+            }
+
+            setSelectedTransaction(undefined);
+        } catch (error) {
+            console.error("Failed to add transaction:", error);
+            // You can add UI error handling here if you wish
+        } finally {
+            setSubmitLoading(false);
+        }
     };
 
-    const deleteTransaction = (id: string) => {
-        setTransactions(prev => prev.filter(transaction => transaction.id !== id));
+    const deleteTransaction = async (id: string) => {
+        setSubmitLoading(true);
+        try {
+            await destroyTransaction(id);
+            setTransactions((prev) =>
+                prev.filter((transaction) => transaction.id !== id)
+            );
+        } catch (error) {
+            console.error("Failed to delete transaction:", error);
+            // You can add UI error handling here if you wish
+        } finally {
+            setSubmitLoading(false);
+        }
+    };
+
+    const handleUpdate = async (id: string) => {
+        setIsFormOpen(true);
+        setSelectedTransaction(
+            transactions.find((transaction) => transaction.id === id)
+        );
+    };
+
+    const Logout = async () => {
+        if (window.confirm("Are you sure you want to logout?")) {
+            await logout();
+        }
     };
 
     const totalBalance = transactions.reduce((sum, transaction) => {
-        return transaction.type === 'income' ? sum + transaction.amount : sum - transaction.amount;
+        return transaction.type === "income"
+            ? sum + transaction.amount
+            : sum - transaction.amount;
     }, 0);
 
     const totalIncome = transactions
-        .filter(t => t.type === 'income')
+        .filter((t) => t.type === "income")
         .reduce((sum, t) => sum + t.amount, 0);
 
     const totalExpenses = transactions
-        .filter(t => t.type === 'expense')
+        .filter((t) => t.type === "expense")
         .reduce((sum, t) => sum + t.amount, 0);
 
-    return (
-        <div className="min-h-screen bg-gradient-to-b from-green-50 to-blue-50 p-6 font-sans">
-            {/* Header */}
-            <header className="text-center mb-6">
-                <div className="flex justify-center items-center gap-2 text-3xl font-bold text-gray-800">
-                    <span>💰</span>
-                    <h1>Money Tracker</h1>
+    if (loading || submitLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="flex flex-col items-center">
+                    <svg
+                        className="animate-spin h-8 w-8 text-blue-500 mb-4"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                    >
+                        <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                        ></circle>
+                        <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                        ></path>
+                    </svg>
+                    <p className="text-lg text-gray-700">Loading...</p>
                 </div>
-                <p className="text-gray-600">Take control of your finances</p>
+            </div>
+        );
+    }
+
+    if (!user) {
+        return <AuthForm />;
+    }
+
+    return (
+        <div className="min-h-screen font-sans p-4 md:p-8 mx-0 md:mx-24">
+            {/* Header */}
+            <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-4 py-6 bg-white rounded-xl shadow gap-4 md:gap-0">
+                <div className="flex items-center gap-3">
+                    <span className="text-3xl">💰</span>
+                    <div>
+                        <h1 className="text-2xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
+                            Money Tracker
+                        </h1>
+                        <p className="text-sm text-gray-500">
+                            Take control of your finances
+                        </p>
+                    </div>
+                </div>
+                <div className="flex flex-col items-end w-full md:w-auto">
+                    <p className="text-xs text-gray-500 mb-1 text-right w-full md:w-auto">
+                        Welcome{user?.displayName ? `, ${user.displayName}` : ""}
+                    </p>
+                    <button
+                        onClick={Logout}
+                        className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded-md font-semibold shadow transition"
+                    >
+                        Logout
+                    </button>
+                </div>
             </header>
 
             {/* Current Balance */}
@@ -56,15 +190,18 @@ export default function HomePage() {
                     className={`text-sm bg-white ${totalBalance >= 0 ? "text-green-600" : "text-red-600"
                         } px-3 py-1 rounded-full mt-2 inline-block font-semibold`}
                 >
-                    {totalBalance >= 0 ? 'Positive Balance' : 'Negative Balance'}
+                    {totalBalance >= 0 ? "Positive Balance" : "Negative Balance"}
                 </span>
             </section>
 
             {/* Summary Cards */}
-            <SummaryCard totalIncome={totalIncome} totalExpense={totalExpenses} totalBalance={totalBalance} />
+            <SummaryCard
+                totalIncome={totalIncome}
+                totalExpense={totalExpenses}
+                totalBalance={totalBalance}
+            />
 
             {/* Tabs */}
-            <div className="mb-8"></div>
             <div className="flex border-b border-gray-200 mb-4">
                 <button
                     className={`px-4 py-2 font-semibold focus:outline-none ${activeTab === "overview"
@@ -107,10 +244,13 @@ export default function HomePage() {
                     </div>
                     <div className="grid md:grid-cols-2 gap-6">
                         <div className="bg-white rounded-xl p-4 shadow">
-                            <h3 className="text-lg font-semibold mb-2">Recent Transactions</h3>
+                            <h3 className="text-lg font-semibold mb-2">
+                                Recent Transactions
+                            </h3>
                             <TransactionHistory
                                 transactions={transactions.slice(0, 5)}
                                 onDelete={deleteTransaction}
+                                onUpdate={handleUpdate}
                                 showAll={false}
                             />
                         </div>
@@ -136,6 +276,7 @@ export default function HomePage() {
                     <TransactionHistory
                         transactions={transactions}
                         onDelete={deleteTransaction}
+                        onUpdate={handleUpdate}
                         showAll={true}
                     />
                 </div>
@@ -152,10 +293,11 @@ export default function HomePage() {
             {/* Transaction Form Modal */}
             {isFormOpen && (
                 <TransactionForm
-                    onSubmit={addTransaction}
+                    onSubmit={handleTransactionSubmit}
                     onClose={() => setIsFormOpen(false)}
+                    selectedTransaction={selectedTransaction}
                 />
             )}
         </div>
-    )
+    );
 }
