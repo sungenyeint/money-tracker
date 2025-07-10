@@ -53,7 +53,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onClose, se
         <div className="fixed inset-0 flex items-center justify-center p-4 z-50 bg-black/30 backdrop-blur-sm">
             <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
                 <div className="border-b px-6 py-4 flex items-center justify-between">
-                    <h2 className="text-lg font-semibold">Add New Transaction</h2>
+                    <h2 className="text-lg font-semibold text-gray-800">Add New Transaction</h2>
                     <button
                         type="button"
                         className="text-gray-500 hover:text-gray-700 text-xl"
@@ -64,7 +64,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onClose, se
                     </button>
                 </div>
                 <div className="px-6 py-4">
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-4 text-gray-800">
                         <div className="flex gap-2">
                             <button
                                 type="button"

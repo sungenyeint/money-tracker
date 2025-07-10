@@ -43,7 +43,7 @@ export default function AuthForm() {
             <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8">
                 <h1 className="text-3xl font-bold mb-3 text-center text-gray-800">Money Tracker</h1>
                 <p className="text-xl font-bold mb-6 text-center text-gray-800">{isLogin ? 'Login' : 'Sign Up'}</p>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4 text-gray-800">
                     <input
                         type="email"
                         placeholder="Email"

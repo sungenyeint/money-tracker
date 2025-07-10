@@ -12,7 +12,7 @@ const RootLayout = ({ children }: RootLayoutProps) => {
         <html lang="en">
             <body>
                 <AuthProvider>
-                    <div className="container">{children}</div>
+                    <div className="container bg-gradient-to-b from-green-100 to-blue-100">{children}</div>
                 </AuthProvider>
             </body>
         </html>
