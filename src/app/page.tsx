@@ -14,6 +14,7 @@ import {
     destroyTransaction,
     updateTransaction,
 } from "./../lib/apiTransactions";
+import Header from "@/components/Header";
 
 export default function Home() {
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -21,7 +22,7 @@ export default function Home() {
     const [activeTab, setActiveTab] = useState<
         "overview" | "transactions" | "analytics"
     >("overview");
-    const { user, loading, logout } = useAuth();
+    const { user, loading } = useAuth();
     const [selectedTransaction, setSelectedTransaction] = useState<
         Transaction | undefined
     >(undefined);
@@ -100,12 +101,6 @@ export default function Home() {
         );
     };
 
-    const Logout = async () => {
-        if (window.confirm("Are you sure you want to logout?")) {
-            await logout();
-        }
-    };
-
     const totalBalance = transactions.reduce((sum, transaction) => {
         return transaction.type === "income"
             ? sum + transaction.amount
@@ -155,32 +150,9 @@ export default function Home() {
     }
 
     return (
-        <div className="min-h-screen font-sans p-4 md:p-8 mx-0 md:mx-24">
+        <div className="min-h-screen p-6 md:p-10 md:w-3/4 mx-auto">
             {/* Header */}
-            <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-4 py-6 bg-white rounded-xl shadow gap-4 md:gap-0">
-                <div className="flex items-center gap-3">
-                    <span className="text-3xl">💰</span>
-                    <div>
-                        <h1 className="text-2xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
-                            Money Tracker
-                        </h1>
-                        <p className="text-sm text-gray-500">
-                            Take control of your finances
-                        </p>
-                    </div>
-                </div>
-                <div className="flex flex-col items-end w-full md:w-auto">
-                    <p className="text-xs text-gray-500 mb-1 text-right w-full md:w-auto">
-                        Welcome{user?.displayName ? `, ${user.displayName}` : ""}
-                    </p>
-                    <button
-                        onClick={Logout}
-                        className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded-md font-semibold shadow transition"
-                    >
-                        Logout
-                    </button>
-                </div>
-            </header>
+            <Header />
 
             {/* Current Balance */}
             <section className="bg-gradient-to-r from-green-400 to-blue-500 text-white text-center p-6 rounded-xl shadow mb-6">

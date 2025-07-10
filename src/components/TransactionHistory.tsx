@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { Transaction } from '../types/transaction';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Transaction, EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../types/transaction';
+import * as XLSX from 'xlsx';
+import { HookData } from 'jspdf-autotable';
 
 interface TransactionHistoryProps {
     transactions: Transaction[];
@@ -8,21 +10,62 @@ interface TransactionHistoryProps {
     showAll?: boolean;
 }
 
+type ExportRow = {
+    'No.': number;
+    'Date': string;
+    'Type': string;
+    'Category': string;
+    'Description': string;
+    'Amount': number;
+  };
+
 const TransactionHistory: React.FC<TransactionHistoryProps> = ({
     transactions,
     onDelete,
     onUpdate,
     showAll = false
 }) => {
-    const [selectedYear, setSelectedYear] = useState<string>('');
-    const [selectedMonth, setSelectedMonth] = useState<string>('');
+    // Advanced filter states
+    const [filterType, setFilterType] = useState<string>('all');
+    const [filterCategory, setFilterCategory] = useState<string>('');
+    const [filterYear, setFilterYear] = useState<string>('');
+    const [filterMonth, setFilterMonth] = useState<string>('');
+
+    // Dropdown open state
+    const [exportOpen, setExportOpen] = useState(false);
+    const exportRef = useRef<HTMLDivElement>(null);
+
+    // Close dropdown on outside click
+    useEffect(() => {
+        function handleClick(event: MouseEvent) {
+            if (exportRef.current && !exportRef.current.contains(event.target as Node)) {
+                setExportOpen(false);
+            }
+        }
+        if (exportOpen) {
+            document.addEventListener('mousedown', handleClick);
+        } else {
+            document.removeEventListener('mousedown', handleClick);
+        }
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, [exportOpen]);
+
+    // Get categories based on type
+    const categories = useMemo(() => {
+        if (filterType === 'income') return INCOME_CATEGORIES.map(cat => ({ type: 'income', name: cat }));
+        if (filterType === 'expense') return EXPENSE_CATEGORIES.map(cat => ({ type: 'expense', name: cat }));
+        // For 'all', combine and tag with type
+        return [
+            ...INCOME_CATEGORIES.map(cat => ({ type: 'income', name: cat })),
+            ...EXPENSE_CATEGORIES.map(cat => ({ type: 'expense', name: cat })),
+        ];
+    }, [filterType]);
 
     // Get unique years and months from transactions
     const years = useMemo(() => {
         const uniqueYears = [...new Set(transactions.map(t => new Date(t.date).getFullYear()))];
-        return uniqueYears.sort((a, b) => b - a); // Sort descending
+        return uniqueYears.sort((a, b) => b - a);
     }, [transactions]);
-
     const months = useMemo(() => {
         const monthNames = [
             'January', 'February', 'March', 'April', 'May', 'June',
@@ -31,35 +74,119 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
         return monthNames.map((name, index) => ({ name, value: index + 1 }));
     }, []);
 
-    // Filter transactions based on selected year and month
+    // Filter transactions based on all filters
     const filteredTransactions = useMemo(() => {
         return transactions.filter(transaction => {
-            const transactionDate = new Date(transaction.date);
-            const transactionYear = transactionDate.getFullYear();
-            const transactionMonth = transactionDate.getMonth() + 1; // getMonth() returns 0-11
-
-            const yearMatch = !selectedYear || transactionYear === parseInt(selectedYear);
-            const monthMatch = !selectedMonth || transactionMonth === parseInt(selectedMonth);
-
-            return yearMatch && monthMatch;
+            // Type filter
+            if (filterType !== 'all' && transaction.type !== filterType) return false;
+            // Category filter
+            if (filterCategory && transaction.category !== filterCategory) return false;
+            // Year/month filter
+            const txDate = new Date(transaction.date);
+            if (filterYear && txDate.getFullYear() !== parseInt(filterYear)) return false;
+            if (filterMonth && (txDate.getMonth() + 1) !== parseInt(filterMonth)) return false;
+            return true;
         });
-    }, [transactions, selectedYear, selectedMonth]);
+    }, [transactions, filterType, filterCategory, filterYear, filterMonth]);
 
-    const getTypeIcon = (type: string) => {
-        return type === 'income' ? '💰' : '💸';
+    // Total amount for filtered results
+    const totalAmount = useMemo(() => {
+        return filteredTransactions.reduce((sum, t) => {
+            return t.type === 'income' ? sum + t.amount : sum - t.amount;
+        }, 0);
+    }, [filteredTransactions]);
+
+    // Helper: Prepare export data
+    const getExportData = (): ExportRow[] =>
+        filteredTransactions.map((t, idx) => ({
+            'No.': idx + 1,
+            'Date': t.date,
+            'Type': t.type,
+            'Category': t.category,
+            'Description': t.description,
+            'Amount': t.amount,
+        }));
+
+    // Helper: Export to PDF
+    const exportToPDF = async (data: ExportRow[]) => {
+        const jsPDF = (await import('jspdf')).default;
+        const autoTable = (await import('jspdf-autotable')).default;
+        const doc = new jsPDF();
+        // Load logo as base64
+        const getBase64FromUrl = async (url: string) => {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            return new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        };
+        const logoBase64 = await getBase64FromUrl('/logo.png');
+        // Add logo
+        doc.addImage(logoBase64, 'PNG', 14, 8, 20, 20);
+        // Title
+        doc.setFontSize(18);
+        doc.text('Transaction Summary', 38, 18);
+        // Export date
+        doc.setFontSize(11);
+        const exportDate = new Date().toLocaleString();
+        doc.text(`Exported: ${exportDate}`, 38, 26);
+        // Summary stats
+        const totalIncome = filteredTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+        const totalExpense = filteredTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+        const netTotal = totalIncome - totalExpense;
+        doc.setFontSize(11);
+        doc.text(`Total Income: $${totalIncome.toFixed(2)}`, 14, 36);
+        doc.text(`Total Expense: $${totalExpense.toFixed(2)}`, 70, 36);
+        doc.text(`Net Total: $${netTotal.toFixed(2)}`, 140, 36);
+        // Table below summary
+        autoTable(doc, {
+            startY: 42,
+            head: [["No.", "Date", "Type", "Category", "Description", "Amount"]],
+            body: data.map(row => [row['No.'], row['Date'], row['Type'], row['Category'], row['Description'], row['Amount']]),
+            styles: { fontSize: 10 },
+            headStyles: { fillColor: [59, 130, 246] }, // blue
+            didDrawPage: (data: HookData) => {
+                // Footer
+                const pageHeight = doc.internal.pageSize.height || doc.internal.pageSize.getHeight();
+                doc.setFontSize(10);
+                doc.setTextColor(150);
+                doc.text('Generated by Money Tracker', data.settings.margin.left, pageHeight - 10);
+            },
+        });
+        doc.save('transactions.pdf');
     };
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-        });
+    // Helper: Export to CSV or XLSX
+    const exportToSheet = (data: ExportRow[], format: 'csv' | 'xlsx') => {
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+        if (format === 'csv') {
+            XLSX.writeFile(wb, 'transactions.csv', { bookType: 'csv' });
+        } else {
+            XLSX.writeFile(wb, 'transactions.xlsx', { bookType: 'xlsx' });
+        }
+    };
+
+    // Refactored Export logic
+    const handleExport = async (format: 'csv' | 'xlsx' | 'pdf') => {
+        if (filteredTransactions.length === 0) return;
+        const data = getExportData();
+        if (format === 'pdf') {
+            await exportToPDF(data);
+        } else {
+            exportToSheet(data, format);
+        }
     };
 
     const clearFilters = () => {
-        setSelectedYear('');
-        setSelectedMonth('');
+        setFilterType('all');
+        setFilterCategory('');
+        setFilterYear('');
+        setFilterMonth('');
     };
 
     if (transactions.length === 0) {
@@ -74,50 +201,112 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
 
     return (
         <div className="space-y-4 sm:space-y-6">
-            {/* Enhanced Filter Controls */}
             {showAll && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6">
-                    <div className="flex flex-col gap-4">
-                        {/* Filter Row */}
-                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                <div className="mb-2">
+                    <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                        <h3 className="text-lg font-semibold text-gray-800">Transactions</h3>
+                        <div ref={exportRef} className="relative flex justify-end">
+                            <button
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg shadow transition flex items-center gap-2"
+                                onClick={e => {
+                                    e.preventDefault();
+                                    setExportOpen((open) => !open);
+                                }}
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                Export
+                            </button>
+                            {exportOpen && (
+                                <div className="absolute right-0 mt-12 w-50 bg-white border border-gray-200 rounded-lg shadow-lg z-10 animate-fade-in">
+                                    <button
+                                        className="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50"
+                                        onClick={() => { handleExport('csv'); setExportOpen(false); }}
+                                    >
+                                        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                        Export as CSV
+                                    </button>
+                                    <button
+                                        className="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50"
+                                        onClick={() => { handleExport('xlsx'); setExportOpen(false); }}
+                                    >
+                                        <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                        Export as Excel
+                                    </button>
+                                    <button
+                                        className="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50"
+                                        onClick={() => { handleExport('pdf'); setExportOpen(false); }}
+                                    >
+                                        <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M8 8h8M8 12h8M8 16h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                                        Export as PDF
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 flex-1">
+                        <div className="flex flex-col sm:flex-row gap-4">
+                            {/* Type Filter */}
                             <div className="flex-1">
-                                <label htmlFor="year-filter" className="block text-sm font-semibold text-gray-700 mb-2">
-                                    Year
-                                </label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Type</label>
                                 <select
-                                    id="year-filter"
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(e.target.value)}
-                                    className="w-full border border-gray-200 rounded-lg px-3 sm:px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white hover:border-gray-300 transition-colors"
+                                    value={filterType}
+                                    onChange={e => {
+                                        setFilterType(e.target.value);
+                                        setFilterCategory('');
+                                    }}
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white hover:border-gray-300 transition-colors"
                                 >
-                                    <option value="">All Years</option>
+                                    <option value="all">All</option>
+                                    <option value="income">Income</option>
+                                    <option value="expense">Expense</option>
+                                </select>
+                            </div>
+                            {/* Category Filter */}
+                            <div className="flex-1">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Category</label>
+                                <select
+                                    value={filterCategory}
+                                    onChange={e => setFilterCategory(e.target.value)}
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white hover:border-gray-300 transition-colors"
+                                >
+                                    <option value="">All</option>
+                                    {categories.map(cat => (
+                                        <option key={cat.type + '-' + cat.name} value={cat.name}>{cat.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {/* Year Filter */}
+                            <div className="flex-1">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Year</label>
+                                <select
+                                    value={filterYear}
+                                    onChange={e => setFilterYear(e.target.value)}
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white hover:border-gray-300 transition-colors"
+                                >
+                                    <option value="">All</option>
                                     {years.map(year => (
                                         <option key={year} value={year}>{year}</option>
                                     ))}
                                 </select>
                             </div>
-
+                            {/* Month Filter */}
                             <div className="flex-1">
-                                <label htmlFor="month-filter" className="block text-sm font-semibold text-gray-700 mb-2">
-                                    Month
-                                </label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Month</label>
                                 <select
-                                    id="month-filter"
-                                    value={selectedMonth}
-                                    onChange={(e) => setSelectedMonth(e.target.value)}
-                                    className="w-full border border-gray-200 rounded-lg px-3 sm:px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white hover:border-gray-300 transition-colors"
+                                    value={filterMonth}
+                                    onChange={e => setFilterMonth(e.target.value)}
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white hover:border-gray-300 transition-colors"
                                 >
-                                    <option value="">All Months</option>
+                                    <option value="">All</option>
                                     {months.map(month => (
                                         <option key={month.value} value={month.value}>{month.name}</option>
                                     ))}
                                 </select>
                             </div>
                         </div>
-
                         {/* Clear Filters Button */}
-                        {(selectedYear || selectedMonth) && (
-                            <div className="flex justify-start">
+                        {(filterType !== 'all' || filterCategory || filterYear || filterMonth) && (
+                            <div className="flex justify-end mt-3">
                                 <button
                                     onClick={clearFilters}
                                     className="text-sm text-blue-600 hover:text-blue-800 font-medium px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors"
@@ -127,27 +316,17 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                             </div>
                         )}
                     </div>
+                    {/* Total Amount for Filtered Results */}
+                    <div className="bg-blue-50 rounded-lg px-4 py-3 text-blue-900 font-semibold text-lg flex items-center gap-2 mt-2">
+                        <span>Total for filtered results:</span>
+                        <span className={totalAmount >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {totalAmount >= 0 ? '+' : '-'}${Math.abs(totalAmount).toFixed(2)}
+                        </span>
+                    </div>
 
-                    {/* Enhanced Filter Summary */}
-                    {(selectedYear || selectedMonth) && (
-                        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                            <div className="text-sm text-blue-800">
-                                <span className="font-medium">Showing {filteredTransactions.length} of {transactions.length} transactions</span>
-                                {selectedYear && selectedMonth && (
-                                    <span> for {months[parseInt(selectedMonth) - 1]?.name} {selectedYear}</span>
-                                )}
-                                {selectedYear && !selectedMonth && (
-                                    <span> for {selectedYear}</span>
-                                )}
-                                {!selectedYear && selectedMonth && (
-                                    <span> for {months[parseInt(selectedMonth) - 1]?.name}</span>
-                                )}
-                            </div>
-                        </div>
-                    )}
+
                 </div>
             )}
-
             {/* Enhanced Transactions List */}
             {filteredTransactions.length === 0 ? (
                 <div className="text-center py-8 sm:py-12 text-gray-500">
@@ -178,7 +357,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                                                 ? 'bg-green-100 text-green-600'
                                                 : 'bg-red-100 text-red-600'
                                         }`}>
-                                            {getTypeIcon(transaction.type)}
+                                            {transaction.type === 'income' ? '💰' : '💸'}
                                         </div>
 
                                         <div className="flex-1 min-w-0">
@@ -194,7 +373,11 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                                                     {transaction.category}
                                                 </span>
                                                 <span className="text-xs sm:text-sm text-gray-500">
-                                                    {formatDate(transaction.date)}
+                                                    {new Date(transaction.date).toLocaleDateString('en-US', {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        year: 'numeric'
+                                                    })}
                                                 </span>
                                             </div>
                                         </div>
